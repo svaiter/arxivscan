@@ -56,27 +56,6 @@ The `gh-pages` branch is entirely generated. It always holds a single commit (it
 on every run), so the repository does not grow with one copy of the data per day. Do not edit it
 by hand: change `site/` on `main` instead.
 
-## One-time setup
-
-1. **Run the workflow once** so that the `gh-pages` branch exists: *Actions* tab → *Update arXiv
-   listings* → *Run workflow* → *Run workflow*. (It also runs automatically on every push to `main`
-   that touches `site/`, `scripts/` or the workflow file; those runs only redeploy the site with
-   the data already on `gh-pages` and do not fetch the feeds, see *Schedule*.)
-2. **Enable GitHub Pages on that branch:** *Settings* → *Pages* → *Build and deployment* →
-   *Source: Deploy from a branch* → *Branch: `gh-pages`*, folder `/ (root)` → *Save*.
-   GitHub then runs its own `pages build and deployment` job after every push to `gh-pages`.
-3. Open https://arxivscan.samuelvaiter.com/. The first Pages build can take a couple of minutes.
-
-**Custom domain.** `site/CNAME` holds the domain and is copied into every `gh-pages` publish.
-Keep it: the branch is force-pushed from scratch each run, and without a `CNAME` file GitHub Pages
-drops the custom domain setting. In *Settings* → *Pages*, set *Custom domain* to the same value and
-tick *Enforce HTTPS*; the DNS needs a `CNAME` record `arxivscan` → `svaiter.github.io`. To use the
-default `https://<owner>.github.io/arxivscan/` URL instead, delete `site/CNAME`. The front-end only
-uses relative paths, so it works under either URL.
-
-That is all. `GITHUB_TOKEN` is enough for the push: the workflow asks for `contents: write` and
-no secret has to be created.
-
 ## Schedule
 
 arXiv announces new papers Sunday to Thursday around 20:00 US Eastern time, and rebuilds its RSS
