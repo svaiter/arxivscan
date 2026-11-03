@@ -59,7 +59,8 @@ by hand: change `site/` on `main` instead.
 
 1. **Run the workflow once** so that the `gh-pages` branch exists: *Actions* tab → *Update arXiv
    listings* → *Run workflow* → *Run workflow*. (It also runs automatically on every push to `main`
-   that touches `site/`, `scripts/` or the workflow file.)
+   that touches `site/`, `scripts/` or the workflow file; those runs only redeploy the site with
+   the data already on `gh-pages` and do not fetch the feeds, see *Schedule*.)
 2. **Enable GitHub Pages on that branch:** *Settings* → *Pages* → *Build and deployment* →
    *Source: Deploy from a branch* → *Branch: `gh-pages`*, folder `/ (root)` → *Save*.
    GitHub then runs its own `pages build and deployment` job after every push to `gh-pages`.
@@ -83,6 +84,11 @@ feeds a few hours later (observed around 09:00 UTC). The workflow runs Monday to
 harmless (the feeds are cheap, a full run takes about three minutes) but the listing only changes
 once a day. Edit the `cron` lines in `.github/workflows/update.yml` to change this; GitHub may delay
 scheduled runs by some minutes at busy times.
+
+Only scheduled runs and manual runs fetch the feeds. A push to `main` (a change to the code or the
+page) republishes the site around the data already on `gh-pages`, so it never re-downloads
+arXiv; a category newly added to `categories.json` therefore gets its data at the next scheduled
+or manual fetch. To redeploy by hand without fetching, uncheck *fetch* in *Run workflow*.
 
 ## Re-running / troubleshooting
 

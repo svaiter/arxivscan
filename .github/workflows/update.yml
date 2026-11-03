@@ -1,6 +1,12 @@
 # Fetches the daily listing of every arXiv category and publishes the static site
 # (site/ + data/*.json) to the gh-pages branch, which GitHub Pages serves.
 #
+# Two modes:
+#   * fetch:    scheduled runs (and manual runs by default) download every feed again.
+#   * redeploy: pushes to main only rebuild the site around the data already published on
+#               gh-pages, without contacting arXiv. (If gh-pages has no data yet, the run
+#               falls back to a fetch.)
+#
 # No external action beyond actions/checkout is used; Python is the one preinstalled
 # on the runner and the scripts need only the standard library.
 #
@@ -25,6 +31,11 @@ on:
         description: 'Comma-separated subset of categories to fetch (empty = all). Other categories keep their previous data.'
         required: false
         default: ''
+      fetch:
+        description: 'Fetch the feeds again (uncheck to only redeploy the site with the data already published).'
+        type: boolean
+        required: false
+        default: true
   push:
     branches: [main]
     paths:
@@ -58,8 +69,34 @@ jobs:
             echo "::notice::no gh-pages branch yet (first run)"
           fi
 
+      # Pushes (code changes) and manual runs with "fetch" unchecked reuse the published data.
+      - name: Choose mode
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          FETCH_INPUT: ${{ github.event.inputs.fetch }}
+        run: |
+          mode=fetch
+          if [ "$EVENT" = push ] || { [ "$EVENT" = workflow_dispatch ] && [ "$FETCH_INPUT" = false ]; }; then
+            if [ -f previous/data/index.json ]; then
+              mode=redeploy
+            else
+              echo "::notice::no published data to reuse; fetching the feeds instead"
+            fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "mode: $mode"
+
+      - name: Reuse published data (redeploy only)
+        if: steps.mode.outputs.mode == 'redeploy'
+        run: |
+          mkdir -p build
+          cp -r previous/data build/data
+          echo "reusing $(ls build/data | wc -l) published data files"
+
       - name: Fetch arXiv feeds
         id: fetch
+        if: steps.mode.outputs.mode == 'fetch'
         continue-on-error: true
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -79,13 +116,14 @@ jobs:
         if: hashFiles('build/data/index.json') != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
           cd build
           git init -q -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -q -m "Publish listings ($(date -u +'%Y-%m-%d %H:%M UTC'), run ${GITHUB_RUN_ID})"
+          git commit -q -m "Publish listings (${MODE}, $(date -u +'%Y-%m-%d %H:%M UTC'), run ${GITHUB_RUN_ID})"
           # A single-commit branch, force-pushed each time: no history is kept, so the
           # repository does not grow with one copy of the data per day.
           git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
