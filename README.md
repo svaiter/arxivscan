@@ -5,7 +5,7 @@ fed by a GitHub Actions workflow. Nobody's browser ever talks to arXiv: the work
 the listing of **every arXiv category** once a day, stores one JSON file per category, and
 the web page merges whichever categories you pick, client-side.
 
-Live site: `https://<owner>.github.io/arxivscan/` (for this repository: https://svaiter.github.io/arxivscan/).
+Live site: https://arxivscan.samuelvaiter.com/ (custom domain, set by `site/CNAME`).
 
 ## How it works
 
@@ -49,7 +49,7 @@ GitHub Actions (cron, Mon-Fri)                GitHub Pages (gh-pages branch)
 | `.github/workflows/update.yml` | The workflow: fetch all feeds, assemble the site, publish to `gh-pages`. |
 | `scripts/fetch_feeds.py` | Fetches the RSS feeds and writes `data/<cat>.json` + `data/index.json`. |
 | `scripts/build_taxonomy.py` | Regenerates `site/categories.json` from https://arxiv.org/category_taxonomy. |
-| `site/` | The static front-end (`index.html`, `app.js`, `style.css`, `categories.json`). |
+| `site/` | The static front-end (`index.html`, `app.js`, `style.css`, `categories.json`, `CNAME`). |
 
 The `gh-pages` branch is entirely generated. It always holds a single commit (it is force-pushed
 on every run), so the repository does not grow with one copy of the data per day. Do not edit it
@@ -63,7 +63,14 @@ by hand: change `site/` on `main` instead.
 2. **Enable GitHub Pages on that branch:** *Settings* → *Pages* → *Build and deployment* →
    *Source: Deploy from a branch* → *Branch: `gh-pages`*, folder `/ (root)` → *Save*.
    GitHub then runs its own `pages build and deployment` job after every push to `gh-pages`.
-3. Open `https://<owner>.github.io/arxivscan/`. The first Pages build can take a couple of minutes.
+3. Open https://arxivscan.samuelvaiter.com/. The first Pages build can take a couple of minutes.
+
+**Custom domain.** `site/CNAME` holds the domain and is copied into every `gh-pages` publish.
+Keep it: the branch is force-pushed from scratch each run, and without a `CNAME` file GitHub Pages
+drops the custom domain setting. In *Settings* → *Pages*, set *Custom domain* to the same value and
+tick *Enforce HTTPS*; the DNS needs a `CNAME` record `arxivscan` → `svaiter.github.io`. To use the
+default `https://<owner>.github.io/arxivscan/` URL instead, delete `site/CNAME`. The front-end only
+uses relative paths, so it works under either URL.
 
 That is all. `GITHUB_TOKEN` is enough for the push: the workflow asks for `contents: write` and
 no secret has to be created.
