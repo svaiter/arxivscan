@@ -61,8 +61,8 @@ def log(msg: str) -> None:
 
 # --------------------------------------------------------------------------- fetching
 
-def http_get(url: str, timeout: float = 60.0, attempts: int = 4) -> bytes:
-    """GET with retries and exponential backoff (2s, 4s, 8s)."""
+def http_get(url: str, timeout: float = 25.0, attempts: int = 3) -> bytes:
+    """GET with retries and exponential backoff (2s, 4s)."""
     last_err = None
     for attempt in range(attempts):
         try:
@@ -99,9 +99,9 @@ ACCENTS = {'"': "\u0308", "'": "\u0301", "`": "\u0300", "^": "\u0302", "~": "\u0
            ".": "\u0307", "u": "\u0306", "v": "\u030c", "H": "\u030b", "c": "\u0327", "k": "\u0328", "r": "\u030a"}
 SYMBOLS = {"ss": "ß", "o": "ø", "O": "Ø", "ae": "æ", "AE": "Æ", "aa": "å", "AA": "Å", "l": "ł", "L": "Ł",
            "i": "ı", "j": "ȷ", "deg": "°", "oe": "œ", "OE": "Œ", "dh": "ð", "DH": "Ð", "th": "þ", "TH": "Þ"}
-ACCENT_RE = re.compile(r"\\([\"'`^~=.uvHckr])\s*(?:\{(\w)\}|(\w))")
-SYMBOL_RE = re.compile(r"\{\\(" + "|".join(sorted(SYMBOLS, key=len, reverse=True)) + r")\}|\\(" +
-                       "|".join(sorted(SYMBOLS, key=len, reverse=True)) + r")(?![A-Za-z])\s?")
+ACCENT_RE = re.compile(r"\\([\"'`^~=.])\s*(?:\{(\w)\}|(\w))|\\([uvHckr])(?:\{(\w)\}|\s+(\w))")
+_SYM = "|".join(sorted(SYMBOLS, key=len, reverse=True))
+SYMBOL_RE = re.compile(r"\{\\(" + _SYM + r")\}|\\(" + _SYM + r")(?![A-Za-z])(?:\{\}|\s)?")
 TEXTCMD_RE = re.compile(r"\\(?:textsc|textit|textbf|texttt|emph|textrm|mbox)\{([^{}]*)\}")
 
 
@@ -115,7 +115,8 @@ def detex(text: str) -> str:
             out.append(chunk)
             continue
         chunk = TEXTCMD_RE.sub(r"\1", chunk)
-        chunk = ACCENT_RE.sub(lambda m: unicodedata.normalize("NFC", (m.group(2) or m.group(3)) + ACCENTS[m.group(1)]), chunk)
+        chunk = ACCENT_RE.sub(lambda m: unicodedata.normalize(
+            "NFC", (m.group(2) or m.group(3) or m.group(5) or m.group(6)) + ACCENTS[m.group(1) or m.group(4)]), chunk)
         chunk = SYMBOL_RE.sub(lambda m: SYMBOLS[m.group(1) or m.group(2)], chunk)
         chunk = re.sub(r"\{(\w)\}", r"\1", chunk)  # leftover single-letter groups such as {e}
         out.append(chunk)
@@ -123,8 +124,10 @@ def detex(text: str) -> str:
 
 
 def split_authors(text: str) -> list:
-    # dc:creator is "A. One, B. Two, C. Three"; a few entries use ' and '.
-    parts = re.split(r",\s*|\s+and\s+", text or "")
+    # dc:creator is "A. One, B. Two, C. Three"; a few entries use ' and ' and some carry
+    # affiliations in parentheses, which may themselves contain commas: drop them.
+    text = re.sub(r"\s*\([^()]*\)", "", text or "")
+    parts = re.split(r",\s*|\s+and\s+", text)
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -218,6 +221,8 @@ def main() -> int:
     ap.add_argument("--previous", default=None, help="directory holding the previously published JSON (fallback)")
     ap.add_argument("--only", default=None, help="comma-separated subset of categories (for testing)")
     ap.add_argument("--delay", type=float, default=0.5, help="seconds to wait between feed requests")
+    ap.add_argument("--budget", type=float, default=1500.0,
+                    help="seconds after which remaining categories are not fetched but fall back to --previous")
     args = ap.parse_args()
 
     taxonomy = load_json(args.taxonomy)
@@ -256,15 +261,18 @@ def main() -> int:
         cid = cat["id"]
         out_path = os.path.join(args.out, f"{cid}.json")
         prev = load_json(os.path.join(args.previous, f"{cid}.json")) if args.previous else None
-        if prev is not None and prev.get("format") != FORMAT_VERSION:
-            prev = None  # incompatible layout: do not carry it over
+        if prev is not None and (prev.get("format") != FORMAT_VERSION or not prev.get("papers")):
+            prev = None  # incompatible layout or an earlier "failed" placeholder: nothing worth keeping
 
         error = None
         parsed = None
-        try:
-            parsed = parse_feed(http_get(FEED_URL.format(cat=cid)))
-        except Exception as e:  # noqa: BLE001 - we want to keep going whatever happens
-            error = f"{type(e).__name__}: {e}"
+        if time.time() - started > args.budget:
+            error = f"time budget of {args.budget:.0f}s exhausted (arXiv unreachable or very slow); not fetched"
+        else:
+            try:
+                parsed = parse_feed(http_get(FEED_URL.format(cat=cid)))
+            except Exception as e:  # noqa: BLE001 - we want to keep going whatever happens
+                error = f"{type(e).__name__}: {e}"
 
         if parsed is not None and not parsed["papers"] and prev is not None:
             # Weekend / holiday / transient empty feed: keep what we had.
@@ -279,7 +287,7 @@ def main() -> int:
             payload = dict(prev)
             payload["stale"] = True
             payload["stale_reason"] = error
-            payload["stale_since"] = utcnow()
+            payload["stale_since"] = prev.get("stale_since") if prev.get("stale") else utcnow()
             stale += 1
             status = "stale"
         else:

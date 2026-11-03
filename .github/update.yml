@@ -43,7 +43,7 @@ concurrency:
 jobs:
   fetch-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
@@ -66,13 +66,17 @@ jobs:
         run: |
           python3 scripts/fetch_feeds.py --out build/data --previous previous/data ${ONLY:+--only "$ONLY"}
 
+      # The two steps below only run when the fetch produced a manifest, so that a crash
+      # of the script never replaces a healthy site with an empty one.
       - name: Assemble site
+        if: hashFiles('build/data/index.json') != ''
         run: |
           cp -r site/. build/
           touch build/.nojekyll
           echo "build/ holds $(ls build/data | wc -l) data files, $(du -sh build | cut -f1) in total"
 
       - name: Publish to gh-pages
+        if: hashFiles('build/data/index.json') != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -89,5 +93,9 @@ jobs:
       - name: Report fetch problems
         if: steps.fetch.outcome == 'failure'
         run: |
-          echo "::error::Some categories could not be fetched and had no previous data. The site was published with what was available; see the step summary and re-run the workflow later."
+          if [ -f build/data/index.json ]; then
+            echo "::error::Some categories could not be fetched and had no previous data. The site was published with what was available; see the step summary and re-run the workflow later."
+          else
+            echo "::error::The fetch script failed before producing data/index.json; nothing was published and the previous site is untouched. See the log above and re-run the workflow."
+          fi
           exit 1

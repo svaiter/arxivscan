@@ -406,7 +406,11 @@
     });
     function renderMath(node, ignoredClasses) {
         if (!node) return;
-        if (!katexReady) { pendingMath.push([node, ignoredClasses]); return; }
+        if (!katexReady) {
+            if (node === el.list) pendingMath.splice(0, pendingMath.length, [node, ignoredClasses]); // only the latest list matters
+            else pendingMath.push([node, ignoredClasses]);
+            return;
+        }
         try {
             window.renderMathInElement(node, {
                 delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }],
@@ -535,6 +539,10 @@
         if (inInput) {
             if (e.key === 'Escape' || (e.key === 'Enter' && a === el.filter)) a.blur();
             return;
+        }
+        if (a && a !== document.body && (tag === 'BUTTON' || tag === 'A' || tag === 'SELECT')) {
+            if (e.key === 'Escape') a.blur();
+            return; // let focused controls handle their own keys (Enter, Space...)
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
