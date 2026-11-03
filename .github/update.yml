@@ -1,0 +1,93 @@
+# Fetches the daily listing of every arXiv category and publishes the static site
+# (site/ + data/*.json) to the gh-pages branch, which GitHub Pages serves.
+#
+# No external action beyond actions/checkout is used; Python is the one preinstalled
+# on the runner and the scripts need only the standard library.
+#
+# To re-run manually: Actions tab -> "Update arXiv listings" -> "Run workflow"
+# (see README.md, section "Re-running / troubleshooting").
+#
+# This file must live at .github/workflows/update.yml (see README, "One-time setup").
+name: Update arXiv listings
+
+on:
+  schedule:
+    # arXiv rebuilds its RSS feeds around 09:00 UTC after each announcement
+    # (announcements happen Sunday to Thursday evenings, US Eastern time, so new
+    # listings appear Monday to Friday). Times are UTC.
+    #   01:15  early run, in case the feeds are rebuilt right after the announcement
+    #   10:15  main run, after the usual feed rebuild
+    #   14:15  catch-up run, if the previous one failed or the feeds were late
+    - cron: '15 1,10,14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated subset of categories to fetch (empty = all). Other categories keep their previous data.'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'scripts/**'
+      - '.github/workflows/update.yml'
+
+permissions:
+  contents: write
+
+# Never let two runs publish at the same time.
+concurrency:
+  group: publish-gh-pages
+  cancel-in-progress: false
+
+jobs:
+  fetch-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Restore previously published data (fallback for feeds that fail today)
+        run: |
+          mkdir -p previous
+          if git fetch --depth=1 origin gh-pages; then
+            git archive FETCH_HEAD data | tar -x -C previous || echo "::notice::gh-pages has no data/ directory yet"
+            echo "restored $(ls previous/data 2>/dev/null | wc -l) previous category files"
+          else
+            echo "::notice::no gh-pages branch yet (first run)"
+          fi
+
+      - name: Fetch arXiv feeds
+        id: fetch
+        continue-on-error: true
+        env:
+          ONLY: ${{ github.event.inputs.only }}
+        run: |
+          python3 scripts/fetch_feeds.py --out build/data --previous previous/data ${ONLY:+--only "$ONLY"}
+
+      - name: Assemble site
+        run: |
+          cp -r site/. build/
+          touch build/.nojekyll
+          echo "build/ holds $(ls build/data | wc -l) data files, $(du -sh build | cut -f1) in total"
+
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd build
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish listings ($(date -u +'%Y-%m-%d %H:%M UTC'), run ${GITHUB_RUN_ID})"
+          # A single-commit branch, force-pushed each time: no history is kept, so the
+          # repository does not grow with one copy of the data per day.
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Report fetch problems
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "::error::Some categories could not be fetched and had no previous data. The site was published with what was available; see the step summary and re-run the workflow later."
+          exit 1
