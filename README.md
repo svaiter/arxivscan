@@ -40,7 +40,8 @@ GitHub Actions (cron, Mon-Fri)                GitHub Pages (gh-pages branch)
   it can be bookmarked. Presets ("ML & AI", "math.OC", ...) can be extended from the category picker
   ("Save preset"); custom presets are stored in your browser's `localStorage`.
 * **Interface:** keyword filter, collapsible abstracts with lazy KaTeX rendering, Markdown citation
-  copy, light/dark theme, Vim-style keys (`j`/`k`, `Enter`, `y`, `g a`/`g p`/`g h`, `/`, `c`, `x`, `?`).
+  copy, light/dark theme, Vim-style keys (`j`/`k` with counts, `gg`/`G`, `Ctrl-d`/`Ctrl-u`, `H`/`M`/`L`,
+  `zz`/`zt`/`zb`, `Enter`/`za`/`zo`/`zc`, `zR`/`zM`, `y`, `o`/`O`, `g a`/`g p`/`g h`, `/`, `c`, `x`, `?`).
 
 ## Repository layout
 

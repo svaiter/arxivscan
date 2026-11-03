@@ -529,9 +529,53 @@
     });
 
     // Vim-style keyboard navigation
-    let gPrefix = false;
-    let gTimer = null;
-    function resetG() { gPrefix = false; if (gTimer) { clearTimeout(gTimer); gTimer = null; } }
+    // Multi-key sequences: a prefix key (g, z) arms `pending`; digits build a `count` (5j).
+    let pending = '';
+    let pendingTimer = null;
+    let count = '';
+    function resetG() {
+        pending = '';
+        count = '';
+        if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+    }
+    function arm(prefix) {
+        pending = prefix;
+        if (pendingTimer) clearTimeout(pendingTimer);
+        pendingTimer = setTimeout(resetG, 1000);
+    }
+    // Paper whose box is closest to viewport height y (used by H / M / L and Ctrl-d / Ctrl-u).
+    function itemAtY(visible, y) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const it of visible) {
+            const r = it.getBoundingClientRect();
+            const d = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+            if (d < bestDist) { best = it; bestDist = d; }
+            if (r.top > y && d > bestDist) break;
+        }
+        return best;
+    }
+    function itemsOnScreen(visible) {
+        return visible.filter((it) => {
+            const r = it.getBoundingClientRect();
+            return r.top >= 0 && r.bottom <= window.innerHeight;
+        });
+    }
+    function openLink(item, kind) {
+        const url = { a: item.dataset.abs, h: item.dataset.html, p: item.dataset.pdf }[kind];
+        if (url) window.open(url, '_blank');
+    }
+    function setAbstract(item, open) {
+        const abs = document.getElementById(item.dataset.absId);
+        if (!abs) return;
+        abs.classList.toggle('visible', open);
+        if (open) renderAbstractMath(abs);
+    }
+    function setAllAbstracts(open) {
+        if (allExpanded !== open) el.toggleAll.click();
+        else visibleItems().forEach((it) => setAbstract(it, open));
+    }
+
     window.addEventListener('keydown', (e) => {
         const a = document.activeElement;
         const tag = a ? a.tagName : '';
@@ -544,7 +588,10 @@
             if (e.key === 'Escape') a.blur();
             return; // let focused controls handle their own keys (Enter, Space...)
         }
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.metaKey || e.altKey) return;
+        // Ctrl is only claimed for Ctrl-d / Ctrl-u; leave every other browser shortcut alone.
+        const ctrlKey = e.ctrlKey ? e.key.toLowerCase() : '';
+        if (e.ctrlKey && ctrlKey !== 'd' && ctrlKey !== 'u') return;
 
         const modalOpen = el.helpModal.classList.contains('visible') || el.pickerModal.classList.contains('visible');
         if (e.key === 'Escape') {
@@ -555,27 +602,78 @@
         }
         if (e.key === '?') { e.preventDefault(); resetG(); closeModal(el.pickerModal); el.helpModal.classList.toggle('visible'); return; }
         if (modalOpen) return;
-        if (e.key === '/') { e.preventDefault(); resetG(); el.filter.focus(); el.filter.select(); return; }
-        if (e.key === 'c') { e.preventDefault(); resetG(); openPicker(); return; }
-        if (e.key === 'x') { e.preventDefault(); resetG(); el.cross.checked = !el.cross.checked; el.cross.dispatchEvent(new Event('change')); return; }
+        if (!pending && e.key === '/') { e.preventDefault(); resetG(); el.filter.focus(); el.filter.select(); return; }
+        if (!pending && e.key === 'c') { e.preventDefault(); resetG(); openPicker(); return; }
+        if (!pending && e.key === 'x') { e.preventDefault(); resetG(); el.cross.checked = !el.cross.checked; el.cross.dispatchEvent(new Event('change')); return; }
 
         const visible = visibleItems();
-        if (!visible.length) return;
+        if (!visible.length) { resetG(); return; }
         const curIdx = visible.findIndex((it) => it.classList.contains('selected'));
         const current = curIdx >= 0 ? visible[curIdx] : visible[0];
+        const go = (idx) => selectItem(visible[Math.max(0, Math.min(idx, visible.length - 1))], true);
 
-        if (gPrefix) {
-            resetG();
-            if (curIdx < 0) selectItem(current, true);
-            const target = { a: current.dataset.abs, h: current.dataset.html, p: current.dataset.pdf }[e.key];
-            if (target) { e.preventDefault(); window.open(target, '_blank'); }
+        // Count prefix (e.g. 5j, 10G). A leading 0 is not a count.
+        if (!pending && !e.ctrlKey && /^[0-9]$/.test(e.key) && (count || e.key !== '0')) {
+            e.preventDefault();
+            count += e.key;
+            if (pendingTimer) clearTimeout(pendingTimer);
+            pendingTimer = setTimeout(resetG, 1500);
             return;
         }
-        if (e.key === 'g') { e.preventDefault(); gPrefix = true; gTimer = setTimeout(resetG, 1000); return; }
-        if (e.key === 'j') { e.preventDefault(); selectItem(visible[curIdx < 0 ? 0 : Math.min(curIdx + 1, visible.length - 1)], true); }
-        else if (e.key === 'k') { e.preventDefault(); selectItem(visible[curIdx < 0 ? 0 : Math.max(curIdx - 1, 0)], true); }
-        else if (e.key === 'Enter') { e.preventDefault(); if (curIdx < 0) selectItem(current, true); toggleAbstract(current.dataset.absId); }
-        else if (e.key === 'y') { e.preventDefault(); if (curIdx < 0) selectItem(current, true); copyMarkdown(current.querySelector('.copy-btn')); }
+        const n = count ? parseInt(count, 10) : 0;
+        const times = n || 1;
+
+        if (pending === 'g') {
+            resetG();
+            if (e.key === 'g') { e.preventDefault(); go(n ? n - 1 : 0); return; }
+            if (curIdx < 0) selectItem(current, true);
+            if ('ahp'.includes(e.key)) { e.preventDefault(); openLink(current, e.key); }
+            return;
+        }
+        if (pending === 'z') {
+            resetG();
+            if (curIdx < 0) selectItem(current, true);
+            const block = { z: 'center', t: 'start', b: 'end' }[e.key];
+            if (block) { e.preventDefault(); current.scrollIntoView({ block, behavior: 'smooth' }); return; }
+            if (e.key === 'a') { e.preventDefault(); toggleAbstract(current.dataset.absId); }
+            else if (e.key === 'o') { e.preventDefault(); setAbstract(current, true); }
+            else if (e.key === 'c') { e.preventDefault(); setAbstract(current, false); }
+            else if (e.key === 'R') { e.preventDefault(); setAllAbstracts(true); }
+            else if (e.key === 'M') { e.preventDefault(); setAllAbstracts(false); }
+            return;
+        }
+
+        if (ctrlKey === 'd' || ctrlKey === 'u') {
+            e.preventDefault();
+            resetG();
+            const dir = ctrlKey === 'd' ? 1 : -1;
+            const half = Math.round(window.innerHeight / 2);
+            const anchor = curIdx >= 0 ? current.getBoundingClientRect() : null;
+            const y = anchor ? (anchor.top + anchor.bottom) / 2 : window.innerHeight / 2;
+            window.scrollBy({ top: dir * half, behavior: 'auto' });
+            const target = itemAtY(visible, Math.max(0, Math.min(window.innerHeight - 1, y)));
+            // At the edge of the page the scroll may not move: still step the selection.
+            selectItem(target && target !== current ? target : visible[Math.max(0, Math.min(visible.indexOf(current) + dir, visible.length - 1))], true);
+            return;
+        }
+
+        const key = e.key;
+        if (key === 'g' || key === 'z') { e.preventDefault(); arm(key); return; }
+        const cnt = count;
+        resetG();
+        if (key === 'j' || key === 'ArrowDown') { e.preventDefault(); go(curIdx < 0 ? times - 1 : curIdx + times); }
+        else if (key === 'k' || key === 'ArrowUp') { e.preventDefault(); go(curIdx < 0 ? 0 : curIdx - times); }
+        else if (key === 'G') { e.preventDefault(); go(cnt ? n - 1 : visible.length - 1); }
+        else if (key === 'H' || key === 'L') {
+            e.preventDefault();
+            const onScreen = itemsOnScreen(visible);
+            const pick = onScreen.length ? (key === 'H' ? onScreen[0] : onScreen[onScreen.length - 1]) : itemAtY(visible, key === 'H' ? 0 : window.innerHeight);
+            selectItem(pick, true);
+        }
+        else if (key === 'M') { e.preventDefault(); selectItem(itemAtY(visible, window.innerHeight / 2), true); }
+        else if (key === 'Enter') { e.preventDefault(); if (curIdx < 0) selectItem(current, true); toggleAbstract(current.dataset.absId); }
+        else if (key === 'y') { e.preventDefault(); if (curIdx < 0) selectItem(current, true); copyMarkdown(current.querySelector('.copy-btn')); }
+        else if (key === 'o' || key === 'O') { e.preventDefault(); if (curIdx < 0) selectItem(current, true); openLink(current, key === 'o' ? 'a' : 'p'); }
     });
 
     window.addEventListener('popstate', () => {

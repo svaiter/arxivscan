@@ -438,6 +438,7 @@ header {
     line-height: 1;
 }
 .modal-close:hover { color: var(--text-main); }
+#helpModal .modal-card { max-width: 480px; overflow-y: auto; }
 .shortcut-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 .shortcut-table td { padding: 0.32rem 0; color: var(--text-main); }
 .shortcut-table td:first-child { width: 38%; white-space: nowrap; }
