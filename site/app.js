@@ -19,7 +19,11 @@
         presets: 'arxivscan-presets',
         cross: 'arxivscan-cross',
         last: 'arxivscan-last',
+        defaults: 'arxivscan-default-presets', // user-edited default buttons (JSON), else DEFAULT_PRESETS
+        start: 'arxivscan-start',              // 'last' (default) | 'default'
+        copy: 'arxivscan-copy-format',         // 'md' (default) | 'org' | 'rich'
     };
+    const COPY_LABELS = { md: 'Markdown', org: 'Org-mode', rich: 'rich text' };
     const CAT_RE = /^[a-z\-]+(\.[a-zA-Z\-]+)?$/i;
     const STALE_RUN_HOURS = 36;
 
@@ -48,6 +52,8 @@
         pickerSearch: $('pickerSearch'), pickerCount: $('pickerCount'), pickerClear: $('pickerClear'),
         pickerApply: $('pickerApply'), presetName: $('presetName'), savePreset: $('savePresetBtn'),
         helpModal: $('helpModal'), helpBtn: $('helpBtn'), themeToggle: $('themeToggle'),
+        optionsModal: $('optionsModal'), optionsLink: $('optionsLink'), optPresets: $('optPresets'),
+        optPresetsReset: $('optPresetsReset'), optCopy: $('optCopy'), optSave: $('optSave'), optError: $('optError'),
     };
 
     // ------------------------------------------------------------------ helpers
@@ -127,10 +133,65 @@
         } catch (e) { return []; }
     }
     function saveCustomPresets(list) { storageSet(STORAGE.presets, JSON.stringify(list)); }
+    function defaultPresets() {
+        try {
+            const arr = JSON.parse(storageGet(STORAGE.defaults) || 'null');
+            if (Array.isArray(arr)) return arr.filter((p) => p && Array.isArray(p.cats) && p.cats.length);
+        } catch (e) { /* fall back */ }
+        return DEFAULT_PRESETS;
+    }
+
+    // ------------------------------------------------------------------ options
+    function copyFormat() { const f = storageGet(STORAGE.copy); return COPY_LABELS[f] ? f : 'md'; }
+    function startMode() { return storageGet(STORAGE.start) === 'default' ? 'default' : 'last'; }
+    function presetsToText(list) {
+        return list.map((p) => (p.label && p.label !== catString(p.cats) ? p.label + ': ' : '') + catString(p.cats)).join('\n');
+    }
+    function parsePresetsText(text) {
+        const out = [];
+        const errors = [];
+        String(text).split('\n').forEach((line, i) => {
+            line = line.trim();
+            if (!line) return;
+            const colon = line.lastIndexOf(':');
+            const label = colon >= 0 ? line.slice(0, colon).trim() : '';
+            const cats = normalizeCats(colon >= 0 ? line.slice(colon + 1) : line);
+            if (!cats.length) { errors.push('line ' + (i + 1)); return; }
+            out.push({ label: label || catString(cats), cats });
+        });
+        return { list: out, errors };
+    }
+    function openOptions() {
+        el.optPresets.value = presetsToText(defaultPresets());
+        el.optCopy.value = copyFormat();
+        const start = startMode();
+        document.querySelectorAll('input[name="optStart"]').forEach((r) => { r.checked = r.value === start; });
+        el.optError.textContent = '';
+        el.optionsModal.classList.add('visible');
+    }
+    function saveOptions() {
+        const { list, errors } = parsePresetsText(el.optPresets.value);
+        if (errors.length) { el.optError.textContent = 'No valid category on ' + errors.join(', '); return; }
+        if (!list.length) { el.optError.textContent = 'Keep at least one button'; return; }
+        const same = list.length === DEFAULT_PRESETS.length &&
+            list.every((p, i) => p.label === DEFAULT_PRESETS[i].label && sameSet(p.cats, DEFAULT_PRESETS[i].cats));
+        if (same) { try { localStorage.removeItem(STORAGE.defaults); } catch (e) { /* ignore */ } }
+        else storageSet(STORAGE.defaults, JSON.stringify(list));
+        const start = document.querySelector('input[name="optStart"]:checked');
+        storageSet(STORAGE.start, start ? start.value : 'last');
+        storageSet(STORAGE.copy, el.optCopy.value);
+        closeModal(el.optionsModal);
+        renderPresets();
+        updateCopyTitles();
+    }
+    function updateCopyTitles() {
+        const t = 'Copy ' + COPY_LABELS[copyFormat()] + ' citation (y)';
+        el.list.querySelectorAll('.copy-btn').forEach((b) => { b.title = t; });
+    }
 
     function renderPresets() {
         el.presetNav.querySelectorAll('.cat-btn:not(.cat-btn-picker)').forEach((b) => b.remove());
-        const all = DEFAULT_PRESETS.map((p) => ({ ...p, custom: false }))
+        const all = defaultPresets().map((p) => ({ ...p, custom: false }))
             .concat(customPresets().map((p) => ({ ...p, custom: true })));
         let matched = false;
         const frag = document.createDocumentFragment();
@@ -344,18 +405,18 @@
             return;
         }
         const parts = [];
+        const copyTitle = 'Copy ' + COPY_LABELS[copyFormat()] + ' citation (y)';
         papers.forEach((p, i) => {
             const absUrl = 'https://arxiv.org/abs/' + p.id;
             const pdfUrl = 'https://arxiv.org/pdf/' + p.id;
             const htmlUrl = 'https://arxiv.org/html/' + p.id;
             const authorStr = p.authors.join(', ');
-            const md = `[${p.id}: ${p.title}](${absUrl}) by ${authorStr}`;
             const mobileId = p.id.includes('.') ? '.' + p.id.split('.').slice(1).join('.') : p.id;
             const subjects = (p.cats || []).join(', ');
             const typePill = p.type === 'cross' ? '<span class="type-pill" title="cross-listed: primary category is ' + esc((p.cats || [])[0] || '?') + '">cross</span>' : '';
             parts.push(`<div class="paper-item" data-type="${esc(p.type)}" data-abs="${esc(absUrl)}" data-pdf="${esc(pdfUrl)}" data-html="${esc(htmlUrl)}" data-abs-id="abs-${i}">
     <div class="line-1">
-        <button type="button" class="copy-btn" data-md="${esc(md)}" title="Copy markdown citation (y)">${COPY_SVG}</button>
+        <button type="button" class="copy-btn" data-idx="${i}" title="${esc(copyTitle)}">${COPY_SVG}</button>
         <span class="entry-links desktop-links">
             <a href="${esc(absUrl)}" class="paper-id" target="_blank" rel="noopener">${esc(p.id)}</a>
             <a href="${esc(pdfUrl)}" class="link-pill" target="_blank" rel="noopener">pdf</a>
@@ -427,11 +488,34 @@
     }
 
     // ------------------------------------------------------------------ interactions
+    function citation(p, fmt) {
+        const url = 'https://arxiv.org/abs/' + p.id;
+        const authors = p.authors.join(', ');
+        const text = p.id + ': ' + p.title;
+        if (fmt === 'org') return { plain: `[[${url}][${text.replace(/[\[\]]/g, '')}]] by ${authors}` };
+        if (fmt === 'rich') {
+            return {
+                plain: `${text} (${url}) by ${authors}`,
+                html: `<a href="${esc(url)}">${esc(text)}</a> by ${esc(authors)}`,
+            };
+        }
+        return { plain: `[${text}](${url}) by ${authors}` };
+    }
     function copyMarkdown(btn) {
-        if (!btn) return;
-        const md = btn.getAttribute('data-md');
-        if (!md || !navigator.clipboard) return;
-        navigator.clipboard.writeText(md).then(() => {
+        if (!btn || !navigator.clipboard) return;
+        const p = state.papers[+btn.getAttribute('data-idx')];
+        if (!p) return;
+        const c = citation(p, copyFormat());
+        let write;
+        if (c.html && window.ClipboardItem && navigator.clipboard.write) {
+            write = navigator.clipboard.write([new ClipboardItem({
+                'text/html': new Blob([c.html], { type: 'text/html' }),
+                'text/plain': new Blob([c.plain], { type: 'text/plain' }),
+            })]).catch(() => navigator.clipboard.writeText(c.plain));
+        } else {
+            write = navigator.clipboard.writeText(c.plain);
+        }
+        write.then(() => {
             btn.classList.add('copied');
             btn.innerHTML = CHECK_SVG;
             setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = COPY_SVG; }, 1200);
@@ -513,7 +597,10 @@
         selectCats(cats, true);
     });
     document.querySelectorAll('.modal-close').forEach((b) => b.addEventListener('click', () => closeModal($(b.dataset.close))));
-    [el.pickerModal, el.helpModal].forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); }));
+    el.optionsLink.addEventListener('click', (e) => { e.preventDefault(); openOptions(); });
+    el.optSave.addEventListener('click', saveOptions);
+    el.optPresetsReset.addEventListener('click', () => { el.optPresets.value = presetsToText(DEFAULT_PRESETS); el.optError.textContent = ''; });
+    [el.pickerModal, el.helpModal, el.optionsModal].forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); }));
     el.helpBtn.addEventListener('click', () => el.helpModal.classList.toggle('visible'));
 
     // Theme toggle
@@ -593,16 +680,19 @@
         const ctrlKey = e.ctrlKey ? e.key.toLowerCase() : '';
         if (e.ctrlKey && ctrlKey !== 'd' && ctrlKey !== 'u') return;
 
-        const modalOpen = el.helpModal.classList.contains('visible') || el.pickerModal.classList.contains('visible');
+        const modalOpen = el.helpModal.classList.contains('visible') || el.pickerModal.classList.contains('visible') ||
+            el.optionsModal.classList.contains('visible');
         if (e.key === 'Escape') {
             resetG();
             closeModal(el.helpModal);
             closeModal(el.pickerModal);
+            closeModal(el.optionsModal);
             return;
         }
         if (e.key === '?') { e.preventDefault(); resetG(); closeModal(el.pickerModal); el.helpModal.classList.toggle('visible'); return; }
         if (modalOpen) return;
         if (!pending && e.key === '/') { e.preventDefault(); resetG(); el.filter.focus(); el.filter.select(); return; }
+        if (!pending && e.key === ',') { e.preventDefault(); resetG(); openOptions(); return; }
         if (!pending && e.key === 'c') { e.preventDefault(); resetG(); openPicker(); return; }
         if (!pending && e.key === 'x') { e.preventDefault(); resetG(); el.cross.checked = !el.cross.checked; el.cross.dispatchEvent(new Event('change')); return; }
 
@@ -709,8 +799,8 @@
         state.cross = u.cross;
         el.cross.checked = u.cross;
         let cats = u.cats;
-        if (!cats.length) cats = normalizeCats(storageGet(STORAGE.last) || '');
-        if (!cats.length) cats = DEFAULT_PRESETS[0].cats.slice();
+        if (!cats.length && startMode() === 'last') cats = normalizeCats(storageGet(STORAGE.last) || '');
+        if (!cats.length) cats = (defaultPresets()[0] || DEFAULT_PRESETS[0]).cats.slice();
         state.cats = cats;
         writeUrl(false);
         renderPresets();

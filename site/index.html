@@ -70,6 +70,7 @@
         <footer>
             <span id="footerInfo"></span>
             prompted by <a href="https://samuelvaiter.com" target="_blank" rel="noopener noreferrer">Samuel Vaiter</a>
+            · <a href="#" id="optionsLink" title="Options (,)">options</a>
             · <a id="repoLink" href="https://github.com/svaiter/arxivscan" target="_blank" rel="noopener noreferrer">source</a>
         </footer>
     </div>
@@ -111,16 +112,49 @@
                 <tr><td><kbd>Enter</kbd> / <kbd>z</kbd> <kbd>a</kbd></td><td>Toggle abstract</td></tr>
                 <tr><td><kbd>z</kbd> <kbd>o</kbd> / <kbd>z</kbd> <kbd>c</kbd></td><td>Open / close abstract</td></tr>
                 <tr><td><kbd>z</kbd> <kbd>R</kbd> / <kbd>z</kbd> <kbd>M</kbd></td><td>Expand / collapse all abstracts</td></tr>
-                <tr><td><kbd>y</kbd></td><td>Yank (copy) Markdown citation</td></tr>
+                <tr><td><kbd>y</kbd></td><td>Yank (copy) citation (format in options)</td></tr>
                 <tr><td><kbd>o</kbd> / <kbd>g</kbd> <kbd>a</kbd></td><td>Open abstract page (abs)</td></tr>
                 <tr><td><kbd>O</kbd> / <kbd>g</kbd> <kbd>p</kbd></td><td>Open PDF</td></tr>
                 <tr><td><kbd>g</kbd> <kbd>h</kbd></td><td>Open HTML version</td></tr>
                 <tr><td><kbd>c</kbd></td><td>Open category picker</td></tr>
                 <tr><td><kbd>x</kbd></td><td>Toggle cross-lists</td></tr>
                 <tr><td><kbd>/</kbd></td><td>Focus search input</td></tr>
+                <tr><td><kbd>,</kbd></td><td>Options</td></tr>
                 <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
                 <tr><td><kbd>Esc</kbd></td><td>Unfocus search / close dialog</td></tr>
             </table>
+        </div>
+    </div>
+
+    <!-- Options (stored in this browser) -->
+    <div id="optionsModal" class="modal-backdrop">
+        <div class="modal-card modal-card-options">
+            <div class="modal-header">
+                <h3>Options <span class="muted">(saved in this browser)</span></h3>
+                <button type="button" class="modal-close" data-close="optionsModal" title="Close (Esc)">×</button>
+            </div>
+            <div class="options-body">
+                <label class="opt-label" for="optPresets">Default category buttons</label>
+                <p class="opt-help">One button per line, <code>Label: cat+cat</code>. The label is optional.</p>
+                <textarea id="optPresets" rows="6" spellcheck="false"></textarea>
+                <div class="opt-row"><button type="button" class="btn-small" id="optPresetsReset">Restore built-in buttons</button></div>
+
+                <span class="opt-label">When opening the site without a category in the URL</span>
+                <label class="opt-radio"><input type="radio" name="optStart" value="last"> show the last selection</label>
+                <label class="opt-radio"><input type="radio" name="optStart" value="default"> show the first default button</label>
+
+                <label class="opt-label" for="optCopy">Copy button format</label>
+                <select id="optCopy">
+                    <option value="md">Markdown: [id: title](url) by authors</option>
+                    <option value="org">Org-mode: [[url][id: title]] by authors</option>
+                    <option value="rich">Rich text (RTF/HTML link, for Word, Mail, Notes…)</option>
+                </select>
+            </div>
+            <div class="picker-footer">
+                <span class="opt-error" id="optError"></span>
+                <span class="spacer"></span>
+                <button type="button" class="btn-primary" id="optSave">Save</button>
+            </div>
         </div>
     </div>
 
