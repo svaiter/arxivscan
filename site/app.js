@@ -79,7 +79,8 @@
     function catString(cats) { return cats.join('+'); }
 
     function abbreviateName(name) {
-        const parts = name.trim().split(/\s+/);
+        // "Jane Doe (Some University)" -> drop the affiliation on mobile
+        const parts = name.replace(/\s*\([^)]*\)\s*$/, '').trim().split(/\s+/);
         if (parts.length <= 1) return name.trim();
         const initials = parts.slice(0, -1).map((p) =>
             p.includes('-') ? p.split('-').filter(Boolean).map((sp) => sp[0] + '.').join('-') : p[0] + '.');

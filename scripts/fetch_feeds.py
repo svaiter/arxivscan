@@ -225,8 +225,10 @@ def main() -> int:
         log(f"error: cannot read taxonomy {args.taxonomy}")
         return 2
     categories = taxonomy["categories"]
+    untouched = []  # categories outside --only: their previous data is carried over as is
     if args.only:
         wanted = {c.strip() for c in args.only.replace("+", ",").split(",") if c.strip()}
+        untouched = [c for c in categories if c["id"] not in wanted]
         categories = [c for c in categories if c["id"] in wanted]
         missing = wanted - {c["id"] for c in categories}
         if missing:
@@ -314,8 +316,29 @@ def main() -> int:
         if i + 1 < len(categories) and args.delay > 0:
             time.sleep(args.delay)
 
+    kept = 0
+    for cat in untouched:
+        cid = cat["id"]
+        prev = load_json(os.path.join(args.previous, f"{cid}.json")) if args.previous else None
+        if prev is None or prev.get("format") != FORMAT_VERSION:
+            continue
+        write_json(os.path.join(args.out, f"{cid}.json"), prev)
+        index["categories"][cid] = {
+            "name": prev.get("name", cid),
+            "announced": prev.get("announced", ""),
+            "fetched_at": prev.get("fetched_at", ""),
+            "stale": prev.get("stale", False),
+            "count_new": prev.get("count_new", 0),
+            "count_cross": prev.get("count_cross", 0),
+            "error": prev.get("stale_reason") if prev.get("stale") else None,
+        }
+        kept += 1
+    if untouched:
+        log(f"kept the previous data of {kept} of the {len(untouched)} categories outside --only")
+
     index["summary"] = {
         "total": len(categories),
+        "kept": kept,
         "fresh": fresh,
         "stale": stale,
         "failed": failed,
