@@ -46,7 +46,7 @@ GitHub Actions (cron, Mon-Fri)                GitHub Pages (gh-pages branch)
 
 | Path | Role |
 |---|---|
-| `.github/workflows/update.yml` (shipped as `.github/update.yml`, see setup) | The workflow: fetch all feeds, assemble the site, publish to `gh-pages`. |
+| `.github/workflows/update.yml` | The workflow: fetch all feeds, assemble the site, publish to `gh-pages`. |
 | `scripts/fetch_feeds.py` | Fetches the RSS feeds and writes `data/<cat>.json` + `data/index.json`. |
 | `scripts/build_taxonomy.py` | Regenerates `site/categories.json` from https://arxiv.org/category_taxonomy. |
 | `site/` | The static front-end (`index.html`, `app.js`, `style.css`, `categories.json`). |
@@ -55,15 +55,7 @@ The `gh-pages` branch is entirely generated. It always holds a single commit (it
 on every run), so the repository does not grow with one copy of the data per day. Do not edit it
 by hand: change `site/` on `main` instead.
 
-## One-time setup (after the first merge into `main`)
-
-0. **Install the workflow file.** It is shipped as `.github/update.yml` because the tooling that
-   produced this branch is not allowed to create files under `.github/workflows/`. Move it there
-   once, from a clone of `main`:
-
-   ```bash
-   git mv .github/update.yml .github/workflows/update.yml && git commit -m "Install the update workflow" && git push
-   ```
+## One-time setup
 
 1. **Run the workflow once** so that the `gh-pages` branch exists: *Actions* tab → *Update arXiv
    listings* → *Run workflow* → *Run workflow*. (It also runs automatically on every push to `main`
