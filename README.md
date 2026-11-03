@@ -5,7 +5,9 @@ fed by a GitHub Actions workflow. Nobody's browser ever talks to arXiv: the work
 the listing of **every arXiv category** once a day, stores one JSON file per category, and
 the web page merges whichever categories you pick, client-side.
 
-Live site: https://arxivscan.samuelvaiter.com/ (custom domain, set by `site/CNAME`).
+Live site: https://arxivscan.samuelvaiter.com/
+
+100% guaranteed pure slop
 
 ## How it works
 
