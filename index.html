@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>arXivScan</title>
+    <meta name="description" content="Daily arXiv new submissions, by category, pre-fetched once a day by GitHub Actions.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0f19'/%3E%3Ctext x='16' y='23' font-size='19' font-family='sans-serif' font-weight='700' text-anchor='middle' fill='%2338bdf8'%3EaX%3C/text%3E%3C/svg%3E">
+    <script>
+        // Apply the stored theme before first paint to avoid a flash.
+        (function () {
+            try {
+                var stored = localStorage.getItem('arxivscan-theme');
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.setAttribute('data-theme', stored);
+                }
+            } catch (e) { /* storage unavailable */ }
+        })();
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <!-- KaTeX: titles are rendered once the list is built, abstracts only when expanded. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+            onload="window.dispatchEvent(new Event('katex-ready'))"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <a href="./" class="brand">arXiv<span>Scan</span></a>
+                <div class="meta-bar">
+                    <span>Batch: <strong id="batchDate">…</strong></span>
+                    <span class="badge-status" id="statusBadge" title="">loading</span>
+                    <a id="actionsLink" class="btn-small" href="#" target="_blank" rel="noopener" title="Open the GitHub Actions page of the fetch workflow">⚙ Actions</a>
+                    <button id="helpBtn" class="btn-icon" title="Keyboard shortcuts (?)">?</button>
+                    <button id="themeToggle" class="btn-icon" title="Toggle light / dark mode">🌓</button>
+                </div>
+            </div>
+
+            <div class="category-nav" id="presetNav">
+                <!-- preset buttons are injected here -->
+                <button type="button" class="cat-btn cat-btn-picker" id="pickerBtn" title="Choose categories to merge">＋ Categories</button>
+                <form id="customCatForm" class="custom-cat-form" autocomplete="off">
+                    <input type="text" id="customCatInput" name="cat" placeholder="e.g. math.ST+stat.ML" spellcheck="false">
+                    <button type="submit">Go</button>
+                </form>
+            </div>
+        </header>
+
+        <div id="notice" class="alert" hidden></div>
+
+        <div class="toolbar">
+            <div class="search-box">
+                <input type="text" id="filterInput" placeholder="Filter by keyword, title, author… ('/' to search, '?' for shortcuts)">
+            </div>
+            <div class="toolbar-info">
+                <label class="cross-toggle" title="Also show papers cross-listed into the selected categories (primary category elsewhere)">
+                    <input type="checkbox" id="crossToggle"> <span class="desktop-only-text">Include </span>cross-lists
+                </label>
+                <span><strong id="paperCount">0</strong><span class="desktop-only-text"> papers</span></span>
+                <button class="view-btn" id="toggleAllBtn"><span id="toggleAllVerb">Expand</span> All<span class="desktop-only-text"> Abstracts</span></button>
+            </div>
+        </div>
+
+        <div class="papers-list" id="papersList">
+            <div class="empty-state">Loading…</div>
+        </div>
+
+        <footer>
+            <span id="footerInfo"></span>
+            prompted by <a href="https://samuelvaiter.com" target="_blank" rel="noopener noreferrer">Samuel Vaiter</a>
+            · <a href="#" id="optionsLink" title="Options (,)">options</a>
+            · <a id="repoLink" href="https://github.com/svaiter/arxivscan" target="_blank" rel="noopener noreferrer">source</a>
+        </footer>
+    </div>
+
+    <!-- Category picker -->
+    <div id="pickerModal" class="modal-backdrop">
+        <div class="modal-card modal-card-wide">
+            <div class="modal-header">
+                <h3>Categories <span class="muted" id="pickerCount"></span></h3>
+                <button type="button" class="modal-close" data-close="pickerModal" title="Close (Esc)">×</button>
+            </div>
+            <div class="picker-tools">
+                <input type="text" id="pickerSearch" placeholder="Search categories (e.g. optimization, cs.LG)…" spellcheck="false">
+                <button type="button" class="btn-small" id="pickerClear">Clear</button>
+            </div>
+            <div class="picker-body" id="pickerBody"></div>
+            <div class="picker-footer">
+                <input type="text" id="presetName" placeholder="Preset name (optional)" spellcheck="false">
+                <button type="button" class="btn-small" id="savePresetBtn" title="Save the selection as a preset button (stored in this browser)">Save preset</button>
+                <span class="spacer"></span>
+                <button type="button" class="btn-primary" id="pickerApply">Show papers</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard shortcuts -->
+    <div id="helpModal" class="modal-backdrop">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Keyboard shortcuts</h3>
+                <button type="button" class="modal-close" data-close="helpModal" title="Close (Esc)">×</button>
+            </div>
+            <table class="shortcut-table">
+                <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Down / up (with a count: <kbd>5</kbd><kbd>j</kbd>)</td></tr>
+                <tr><td><kbd>g</kbd> <kbd>g</kbd> / <kbd>G</kbd></td><td>First / last paper (<kbd>12</kbd><kbd>G</kbd>: paper 12)</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>d</kbd> / <kbd>Ctrl</kbd>+<kbd>u</kbd></td><td>Half page down / up</td></tr>
+                <tr><td><kbd>H</kbd> / <kbd>M</kbd> / <kbd>L</kbd></td><td>Top / middle / bottom of screen</td></tr>
+                <tr><td><kbd>z</kbd> <kbd>z</kbd> / <kbd>z</kbd> <kbd>t</kbd> / <kbd>z</kbd> <kbd>b</kbd></td><td>Scroll paper to center / top / bottom</td></tr>
+                <tr><td><kbd>Enter</kbd> / <kbd>z</kbd> <kbd>a</kbd></td><td>Toggle abstract</td></tr>
+                <tr><td><kbd>z</kbd> <kbd>o</kbd> / <kbd>z</kbd> <kbd>c</kbd></td><td>Open / close abstract</td></tr>
+                <tr><td><kbd>z</kbd> <kbd>R</kbd> / <kbd>z</kbd> <kbd>M</kbd></td><td>Expand / collapse all abstracts</td></tr>
+                <tr><td><kbd>y</kbd></td><td>Yank (copy) citation (format in options)</td></tr>
+                <tr><td><kbd>o</kbd> / <kbd>g</kbd> <kbd>a</kbd></td><td>Open abstract page (abs)</td></tr>
+                <tr><td><kbd>O</kbd> / <kbd>g</kbd> <kbd>p</kbd></td><td>Open PDF</td></tr>
+                <tr><td><kbd>g</kbd> <kbd>h</kbd></td><td>Open HTML version</td></tr>
+                <tr><td><kbd>c</kbd></td><td>Open category picker</td></tr>
+                <tr><td><kbd>x</kbd></td><td>Toggle cross-lists</td></tr>
+                <tr><td><kbd>/</kbd></td><td>Focus search input</td></tr>
+                <tr><td><kbd>,</kbd></td><td>Options</td></tr>
+                <tr><td><kbd>?</kbd></td><td>Toggle this help</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Unfocus search / close dialog</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Options (stored in this browser) -->
+    <div id="optionsModal" class="modal-backdrop">
+        <div class="modal-card modal-card-options">
+            <div class="modal-header">
+                <h3>Options <span class="muted">(saved in this browser)</span></h3>
+                <button type="button" class="modal-close" data-close="optionsModal" title="Close (Esc)">×</button>
+            </div>
+            <div class="options-body">
+                <label class="opt-label" for="optPresets">Default category buttons</label>
+                <p class="opt-help">One button per line, <code>Label: cat+cat</code>. The label is optional.</p>
+                <textarea id="optPresets" rows="6" spellcheck="false"></textarea>
+                <div class="opt-row"><button type="button" class="btn-small" id="optPresetsReset">Restore built-in buttons</button></div>
+
+                <span class="opt-label">When opening the site without a category in the URL</span>
+                <label class="opt-radio"><input type="radio" name="optStart" value="last"> show the last selection</label>
+                <label class="opt-radio"><input type="radio" name="optStart" value="default"> show the first default button</label>
+
+                <label class="opt-label" for="optCopy">Copy button format</label>
+                <select id="optCopy">
+                    <option value="md">Markdown: [id: title](url) by authors</option>
+                    <option value="org">Org-mode: [[url][id: title]] by authors</option>
+                    <option value="rich">Rich text (RTF/HTML link, for Word, Mail, Notes…)</option>
+                </select>
+            </div>
+            <div class="picker-footer">
+                <span class="opt-error" id="optError"></span>
+                <span class="spacer"></span>
+                <button type="button" class="btn-primary" id="optSave">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
